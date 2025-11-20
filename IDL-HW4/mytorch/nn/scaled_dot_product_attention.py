@@ -12,7 +12,8 @@ class ScaledDotProductAttention:
         # Initialize your softmax layer
         # What dimension should you pass to the softmax constructor?
         self.eps = 1e10 # DO NOT MODIFY
-        self.softmax = NotImplementedError
+        # Perform softmax on the last dimension S
+        self.softmax = Softmax(dim=-1)
         
     
     def forward(self, Q, K, V, mask=None):
@@ -23,53 +24,54 @@ class ScaledDotProductAttention:
         :param mask: Boolean mask matrix of shape (N, ..., H, L, S) or broadcastable shape where 1/True indicates a position to ignore
         :return: Output matrix of shape (N, ..., H, L, Ev)
         """
-        # TODO: Implement forward pass
-        
-        # Calculate attention scores: (N, ..., H, L, S)
+        # Save input for backward use
+        self.Q = Q
+        self.K = K
+        self.V = V
+        self.d_k = Q.shape[-1]
+
         # (N, ..., H, L, E) @ (N, ..., H, E, S) -> (N, ..., H, L, S)
-        scaled_dot_product = NotImplementedError
-        
+        scaled_dot_product = np.matmul(Q, np.swapaxes(K, -1, -2)) / np.sqrt(self.d_k)
+
         # Apply mask before softmax if provided
-        # If mask is not None, add -self.eps to the attention scores for positions to ignore
         if mask is not None:
-            scaled_dot_product = NotImplementedError
+            # Subtracting a huge number from the position of True/1 is equivalent to -inf
+            scaled_dot_product = scaled_dot_product - self.eps * mask
 
-        # Compute attention scores: Apply softmax along S dimension (N, ..., H, L, S)
-        self.attention_scores = NotImplementedError
+        # Compute attention scores: softmax over S dim
+        self.attention_scores = self.softmax.forward(scaled_dot_product)
 
-        # Calculate output: (N, ..., H, L, Ev)
         # (N, ..., H, L, S) @ (N, ..., H, S, Ev) -> (N, ..., H, L, Ev) 
-        output = NotImplementedError
+        output = np.matmul(self.attention_scores, V)
 
-        # Return output
-        raise NotImplementedError
+        return output
     
     def backward(self, d_output):
         """
         :param d_output: Gradient of loss wrt output of shape (N, ..., H, L, Ev)
         :return: Gradient of loss wrt input Q, K, V
         """
-        # TODO: Implement backward pass
+        A = self.attention_scores
+        Q = self.Q
+        K = self.K
+        V = self.V
 
-        # Calculate gradients for V: (N, ..., H, S, Ev)
-        # (N, ..., H, L, S) @ (N, ..., H, S, Ev) -> (N, ..., H, L, Ev) 
-        # Use the transpose of stored softmax output to swap last two dimensions   
-        d_V = NotImplementedError
+        # dV: A^T @ d_output  -> (N, ..., H, S, Ev)
+        d_V = np.matmul(np.swapaxes(A, -2, -1), d_output)
         
-        # Calculate gradients for attention scores
-        # (N, ..., H, L, Ev) @ (N, ..., H, Ev, S) -> (N, ..., H, L, S)
-        d_attention_scores = NotImplementedError
-        d_scaled_dot_product = NotImplementedError
-        
-        # Scale gradients by sqrt(d_k)
-        d_scaled_dot_product = NotImplementedError
-        
-        # Calculate gradients for Q and K
-        # (N, ..., H, L, S) @ (N, ..., H, S, E) -> (N, ..., H, L, E)   
-        d_Q = NotImplementedError
-        # (N, ..., H, L, S) @ (N, ..., H, L, E) -> (N, ..., H, S, E)
-        d_K = NotImplementedError
-        
-        # Return gradients for Q, K, V
-        raise NotImplementedError
+        # dA: d_output @ V^T  -> (N, ..., H, L, S)
+        d_attention_scores = np.matmul(d_output, np.swapaxes(V, -1, -2))
 
+        # The gradient with respect to scaled scores is obtained through softmax.
+        d_scaled_dot_product = self.softmax.backward(d_attention_scores)
+        
+        # Consider scaling by dividing by sqrt(d_k): scores = (QK^T)/sqrt(d_k)
+        d_scaled_dot_product = d_scaled_dot_product / np.sqrt(self.d_k)
+        
+        # dQ: d_scores @ K -> (N, ..., H, L, E)
+        d_Q = np.matmul(d_scaled_dot_product, K)
+
+        # dK: d_scores^T @ Q -> (N, ..., H, S, E)
+        d_K = np.matmul(np.swapaxes(d_scaled_dot_product, -2, -1), Q)
+        
+        return d_Q, d_K, d_V

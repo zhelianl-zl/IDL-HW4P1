@@ -28,11 +28,21 @@ class Linear:
         Handles arbitrary batch dimensions like PyTorch
         """
         # TODO: Implement forward pass
-        
+
         # Store input for backward pass
         self.A = A
-        
-        raise NotImplementedError
+        self.A_shape = A.shape
+
+        # Flatten all leading dimensions into one batch dimension
+        A_2d = A.reshape(-1, self.W.shape[1])      # (B, in_features)
+        self.A_2d = A_2d
+
+        # Linear transform: Z = A W^T + b
+        Z_2d = A_2d @ self.W.T + self.b            # (B, out_features)
+
+        # Reshape back to original batch dims with out_features at the end
+        Z = Z_2d.reshape(*self.A_shape[:-1], self.W.shape[0])
+        return Z
 
     def backward(self, dLdZ):
         """
@@ -41,11 +51,21 @@ class Linear:
         """
         # TODO: Implement backward pass
 
-        # Compute gradients (refer to the equations in the writeup)
-        self.dLdA = NotImplementedError
-        self.dLdW = NotImplementedError
-        self.dLdb = NotImplementedError
-        self.dLdA = NotImplementedError
-        
+        # Flatten gradient to match 2D view used in forward
+        dLdZ_2d = dLdZ.reshape(-1, self.W.shape[0])   # (B, out_features)
+
+        # Gradients wrt input, weights, and bias
+        dLdA_2d = dLdZ_2d @ self.W                    # (B, in_features)
+        dLdW = dLdZ_2d.T @ self.A_2d                  # (out_features, in_features)
+        dLdb = dLdZ_2d.sum(axis=0)                    # (out_features,)
+
+        # Reshape dLdA back to original input shape
+        dLdA = dLdA_2d.reshape(self.A_shape)
+
+        # Store gradients
+        self.dLdA = dLdA
+        self.dLdW = dLdW
+        self.dLdb = dLdb
+
         # Return gradient of loss wrt input
-        raise NotImplementedError
+        return dLdA

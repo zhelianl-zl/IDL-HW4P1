@@ -53,9 +53,13 @@ class SelfAttentionDecoderLayer(nn.Module):
         # TODO: Implement __init__
        
         # TODO: Initialize the sublayers      
-        self.self_attn = NotImplementedError # Masked self-attention layer
-        self.ffn = NotImplementedError # Feed-forward network
-        raise NotImplementedError # Remove once implemented
+        # Masked self-attention + FFN
+        self.self_attn = SelfAttentionLayer(d_model=d_model,
+                                            num_heads=num_heads,
+                                            dropout=dropout)
+        self.ffn = FeedForwardLayer(d_model=d_model,
+                                    d_ff=d_ff,
+                                    dropout=dropout)
 
     def forward(self, x: torch.Tensor, key_padding_mask: Optional[torch.Tensor] = None, attn_mask: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
         '''
@@ -70,11 +74,17 @@ class SelfAttentionDecoderLayer(nn.Module):
             mha_attn_weights (torch.Tensor): The attention weights. shape: (batch_size, seq_len, seq_len)   
         '''
         # TODO: Implement forward: Follow the figure in the writeup
+        # 1) masked self-attention
+        x, mha_attn_weights = self.self_attn(
+            x,
+            key_padding_mask=key_padding_mask,
+            attn_mask=attn_mask,
+        )
 
-        x, mha_attn_weights = NotImplementedError, NotImplementedError
-        
-        # TODO: Return the output tensor and attention weights
-        raise NotImplementedError # Remove once implemented
+        # 2) position-wise feed-forward
+        x = self.ffn(x)
+
+        return x, mha_attn_weights
 
 ## -------------------------------------------------------------------------------------------------    
 class CrossAttentionDecoderLayer(nn.Module):
@@ -95,10 +105,16 @@ class CrossAttentionDecoderLayer(nn.Module):
         # TODO: Implement __init__
 
         # TODO: Initialize the sublayers  
-        self.self_attn  = NotImplementedError # Masked self-attention layer
-        self.cross_attn = NotImplementedError # Cross-attention layer
-        self.ffn        = NotImplementedError # Feed-forward network
-        raise NotImplementedError # Remove once implemented
+        # self-attention, cross-attention, FFN
+        self.self_attn  = SelfAttentionLayer(d_model=d_model,
+                                             num_heads=num_heads,
+                                             dropout=dropout)
+        self.cross_attn = CrossAttentionLayer(d_model=d_model,
+                                              num_heads=num_heads,
+                                              dropout=dropout)
+        self.ffn        = FeedForwardLayer(d_model=d_model,
+                                           d_ff=d_ff,
+                                           dropout=dropout)
 
     def forward(self, x: torch.Tensor, enc_output: torch.Tensor, dec_key_padding_mask: Optional[torch.Tensor] = None, enc_key_padding_mask: Optional[torch.Tensor] = None, attn_mask: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         '''
@@ -115,10 +131,23 @@ class CrossAttentionDecoderLayer(nn.Module):
             cross_attn_weights (torch.Tensor): The attention weights. shape: (batch_size, seq_len, seq_len)    
         '''
         # TODO: Implement forward: Follow the figure in the writeup
+        # 1) masked self-attention on decoder input
+        x, self_attn_weights = self.self_attn(
+            x,
+            key_padding_mask=dec_key_padding_mask,
+            attn_mask=attn_mask,
+        )
 
-        x, self_attn_weights  = NotImplementedError, NotImplementedError
-        x, cross_attn_weights = NotImplementedError, NotImplementedError
+        # 2) cross-attention over encoder outputs
+        x, cross_attn_weights = self.cross_attn(
+            x,
+            enc_output,
+            key_padding_mask=enc_key_padding_mask,
+            attn_mask=None,
+        )
 
-        # TODO: Return the output tensor and attention weights    
-        raise NotImplementedError # Remove once implemented
+        # 3) position-wise feed-forward
+        x = self.ffn(x)
+
+        return x, self_attn_weights, cross_attn_weights
 ## -------------------------------------------------------------------------------------------------    
