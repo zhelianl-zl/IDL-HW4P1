@@ -411,7 +411,6 @@ class LMTrainer(BaseTrainer):
                 print("Generating with greedy search...")
                 seqs, scores = generator.generate_greedy(
                     prompts,
-                    max_length=generation_config.get('max_length', self.model.max_len),
                     temperature=generation_config.get('temperature', 1.0),
                     repeat_penalty=generation_config.get('repeat_penalty', 1.0),
                 )
