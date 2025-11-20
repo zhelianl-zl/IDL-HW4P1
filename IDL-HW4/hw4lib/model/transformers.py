@@ -118,20 +118,32 @@ class DecoderOnlyTransformer(nn.Module):
         self.num_layers      = num_layers
         
         # TODO: Create a ModuleList of decoder layers based on the number of layers
-        self.dec_layers     = NotImplementedError # ModuleList of decoder layers
+        # 1. decoder layer 堆叠
+        self.dec_layers = nn.ModuleList(
+            [
+                SelfAttentionDecoderLayer(
+                    d_model=d_model,
+                    num_heads=num_heads,
+                    d_ff=d_ff,
+                    dropout=dropout,
+                )
+                for _ in range(num_layers)
+            ]
+        )
 
         # TODO: Create target embedding and other layers
-        self.target_embedding       = NotImplementedError # Target embedding
-        self.positional_encoding    = NotImplementedError # Positional encoding
-        self.final_linear           = NotImplementedError # Final linear layer
-        self.dropout                = NotImplementedError # Dropout
-        self.norm                   = NotImplementedError # Layer norm
+        # 2. 词嵌入 + 位置编码
+        self.target_embedding    = nn.Embedding(num_classes, d_model)
+        self.positional_encoding = PositionalEncoding(d_model=d_model, max_len=max_len)
+        # 3. 输出 projection
+        self.final_linear = nn.Linear(d_model, num_classes)
+        # 4. dropout 和最终 LayerNorm（Pre-LN 架构）
+        self.dropout = nn.Dropout(dropout)
+        self.norm    = nn.LayerNorm(d_model)
 
         # Weight tying (extra form of regularization, read more about it)
         if weight_tying:
             self.target_embedding.weight = self.final_linear.weight
-
-        raise NotImplementedError # Remove once implemented
 
     def forward(self, padded_targets: torch.Tensor, target_lengths: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, dict]:
         '''
@@ -152,38 +164,42 @@ class DecoderOnlyTransformer(nn.Module):
         # TODO: Create padding mask for padded_targets on the same device as the input (use PadMask)
         pad_mask_dec = None
         if target_lengths is not None:
-            pad_mask_dec = NotImplementedError
+            pad_mask_dec = PadMask(padded_targets, target_lengths)  # (B, T) bool
         
         # TODO: Create causal mask to prevent attending to future tokens on the same device as the input (use CausalMask)
-        causal_mask = NotImplementedError
+        causal_mask = CausalMask(padded_targets)  # (T, T) bool
 
         # TODO: Apply the embedding
-        x = NotImplementedError
+        x = self.target_embedding(padded_targets)        # (B, T, d_model)
         # TODO: Apply positional encoding
-        x = NotImplementedError
+        x = self.positional_encoding(x)                  # (B, T, d_model)
         # TODO: Apply dropout 
-        x = NotImplementedError
+        x = self.dropout(x)
 
         # TODO: Pass through all decoder layers, save attention masks
-        runnint_att = {}
-        for i in range(self.num_layers):
+        running_att = {}
+        for i, layer in enumerate(self.dec_layers):
             # Optionally apply LayerDrop during training (More regularization!)
             if self.training and self.layer_drop_rate > 0 and random.random() < self.layer_drop_rate:
                 continue
             
             # TODO: Pass through decoder layer
-            x, attention = NotImplementedError, NotImplementedError
-            
-            # TODO: Save attention weights  
-            runnint_att['layer{}_dec_self'.format(i + 1)] = attention
+            x, attn = layer(
+                x,
+                key_padding_mask=pad_mask_dec,
+                attn_mask=causal_mask,
+            )  # x: (B, T, d_model), attn: (B, T, T)
+
+            running_att[f"layer{i+1}_dec_self"] = attn
 
         # TODO: Apply normalization
-        x = NotImplementedError
+        # 5. 最后一层 LayerNorm
+        x = self.norm(x)                     # (B, T, d_model)
         # TODO: Linear layer (Final Projection) for next character prediction
-        seq_out = NotImplementedError
-        
-        # TODO: Return the output sequence and running attention weights
-        raise NotImplementedError
+        # 6. 投到 vocab 空间 → logits
+        seq_out = self.final_linear(x)       # (B, T, num_classes)
+
+        return seq_out, running_att
     
     def score(self, batch_prompts: torch.Tensor) -> torch.Tensor:
         '''
