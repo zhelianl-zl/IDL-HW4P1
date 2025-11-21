@@ -392,7 +392,9 @@ class ASRTrainer(BaseTrainer):
         
         return eval_results
 
-    def recognize(self, dataloader, recognition_config: Optional[Dict[str, Any]] = None, config_name: Optional[str] = None, max_length: Optional[int] = None) -> List[Dict[str, Any]]:
+    def recognize(self, dataloader, recognition_config: Optional[Dict[str, Any]] = None,
+              config_name: Optional[str] = None, max_length: Optional[int] = None):
+
         """
         Evaluate the model by generating transcriptions from audio features.
         
@@ -412,32 +414,42 @@ class ASRTrainer(BaseTrainer):
         """
         if max_length is None and not hasattr(self, 'text_max_len'):
             raise ValueError("text_max_len is not set. Please run training loop first or provide a max_length")
+
         
         # TODO: In-fill the recognize method
+
+        # 1. 先把传进来的 recognition_config 和默认值合并
         if recognition_config is None:
-            recognition_config = self.config.get('recognition', None)
+            base_cfg = self.config.get('recognition', {}) or {}
+        else:
+            base_cfg = recognition_config.copy()
+
+        defaults = {
+            'num_batches': 5,
+            'beam_width': 1,
+            'temperature': 1.0,
+            'repeat_penalty': 1.0,
+            'lm_weight': 0.0,
+            'lm_model': None,
+        }
+        defaults.update(base_cfg)
+        recognition_config = defaults
+
+        # 2. 如果没有指定 config_name，就根据 beam_width 给个名字
         if config_name is None:
-            config_name = 'greedy'
+            if recognition_config['beam_width'] == 1:
+                config_name = 'greedy'
+            else:
+                config_name = f"beam_{recognition_config['beam_width']}"
 
-        if recognition_config is None:
-            # Default config (greedy search)
-            recognition_config = {
-                'num_batches': 5,
-                'beam_width': 1,
-                'temperature': 1.0,
-                'repeat_penalty': 1.0,
-                'lm_weight': 0.0,
-                'lm_model': None
-            }
-            config_name = 'greedy'
-
+        # 3. 如果有 lm_model，就放到 eval 模式并搬到 device 上
         if recognition_config.get('lm_model') is not None:
             recognition_config['lm_model'].eval()
             recognition_config['lm_model'].to(self.device)
 
-        # Initialize sequence generator
+        # 4. 初始化 sequence generator（你原来文件里已经有这一段，直接保留）
         generator = SequenceGenerator(
-            score_fn=None,  # Will be set for each batch
+            model=self.model,
             tokenizer=self.tokenizer,
             max_length=max_length if max_length is not None else self.text_max_len,
             device=self.device
@@ -445,7 +457,12 @@ class ASRTrainer(BaseTrainer):
 
         # Initialize variables
         self.model.eval()
-        batch_bar = tqdm(total=len(dataloader), dynamic_ncols=True, leave=False, position=0, desc=f"[Recognizing ASR] : {config_name}")
+        batch_bar = tqdm(
+            total=len(dataloader),
+            dynamic_ncols=False,
+            position=0,
+            desc=f"[Recognizing ASR] : {config_name}"
+        )
         results = []
 
         # Run inference
