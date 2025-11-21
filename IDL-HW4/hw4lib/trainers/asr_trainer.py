@@ -447,23 +447,24 @@ class ASRTrainer(BaseTrainer):
             recognition_config['lm_model'].eval()
             recognition_config['lm_model'].to(self.device)
 
-        # 4. 初始化 sequence generator（你原来文件里已经有这一段，直接保留）
+        # 4. 初始化 sequence generator
         generator = SequenceGenerator(
-            model=self.model,
-            tokenizer=self.tokenizer,
-            max_length=max_length if max_length is not None else self.text_max_len,
-            device=self.device
+            None,
+            self.tokenizer,
+            max_length if max_length is not None else self.text_max_len,
+            self.device,
         )
 
-        # Initialize variables
+        # 初始化一些状态
         self.model.eval()
         batch_bar = tqdm(
             total=len(dataloader),
-            dynamic_ncols=False,
+            dynamic_ncols=True,
             position=0,
-            desc=f"[Recognizing ASR] : {config_name}"
+            desc=f"[Recognizing ASR] : {config_name}",
         )
         results = []
+
 
         # Run inference
         with torch.inference_mode():
