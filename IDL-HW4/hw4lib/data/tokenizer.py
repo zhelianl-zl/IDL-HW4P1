@@ -1,5 +1,6 @@
 from typing import Literal, List, Dict
 from tokenizers import Tokenizer, decoders, processors
+import torch
 
 '''
 Specification:
@@ -135,6 +136,9 @@ class H4Tokenizer:
         Returns:
             Decoded text string
         """
+        if isinstance(token_ids, torch.Tensor):
+            # 确保是一维：比如 tensor([1,2,3])
+            token_ids = token_ids.tolist()
         return self.tokenizer.decode(token_ids, skip_special_tokens=skip_special_tokens)
 
     def _validate_tokenizer(self) -> None:
