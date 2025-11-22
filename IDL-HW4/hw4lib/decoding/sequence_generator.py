@@ -318,16 +318,23 @@ class SequenceGenerator:
             logits = logits / temperature
             log_probs = torch.log_softmax(logits, dim=-1)   # (B, K, V)
 
-            # 对已经 finished 的 beam，不再扩展，只让它继续保持 EOS
+            # 对已经 finished 的 beam：只允许 EOS，其他 token 设为 -inf
             if finished.any():
-                # 先把这些 beam 所有 token 设成 -inf
+                # finished: (B, K)
+                # 先把所有 token 设为 -inf
                 log_probs = log_probs.masked_fill(
-                    finished.unsqueeze(-1),
-                    float('-inf')
+                    finished.unsqueeze(-1),    # (B, K, 1) → 自动广播到 V
+                    float("-inf"),
                 )
-                # 但保留 EOS 的概率（设为 0 → log_prob 加 0）
+
+                # 再把这些 beam 的 EOS 位置设回 0（log prob = 0，相当于 prob = 1）
                 eos_id = self.tokenizer.eos_id
-                log_probs[finished, eos_id] = 0.0
+
+                # 找出 finished==True 的 (batch_idx, beam_idx) 对
+                batch_idx, beam_idx = finished.nonzero(as_tuple=True)  # 1D 各自长度 <= B*K
+
+                if batch_idx.numel() > 0:
+                    log_probs[batch_idx, beam_idx, eos_id] = 0.0
 
             # 当前所有候选的总分数：旧分数 + 本步 log_prob
             total_scores = beam_scores.unsqueeze(-1) + log_probs  # (B, K, V)
