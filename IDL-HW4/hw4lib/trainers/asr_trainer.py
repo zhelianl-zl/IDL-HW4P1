@@ -481,10 +481,46 @@ class ASRTrainer(BaseTrainer):
                 
                 # TODO: Encode speech features to hidden states
                 encoder_output, pad_mask_src, _, _ = self.model.encode(feats, feat_lengths)
-                
+
                 # Define scoring function for this batch
-                def get_score(x):
-                    asr_logits = self.model.score(x, encoder_output, pad_mask_src)
+                def get_score(x: torch.Tensor) -> torch.Tensor:
+                    """
+                    x: (B, T_dec)    —— greedy 时
+                    (B*K, T_dec) —— beam search 时
+                    需要保证 encoder_output / pad_mask_src 的 batch 维度和 x 一致。
+                    """
+                    Bx = x.size(0)                    # 可能是 B 或 B*K
+                    B_enc = encoder_output.size(0)    # 一定是原始的 B
+
+                    if Bx != B_enc:
+                        # 假设是 beam search，Bx = B_enc * beam_width
+                        beam_factor = Bx // B_enc
+                        L_enc = encoder_output.size(1)
+                        D = encoder_output.size(2)
+
+                        # 把 encoder_output 在“beam 维度”上复制 beam_factor 次
+                        enc = (
+                            encoder_output
+                            .unsqueeze(1)                        # (B, 1, L_enc, D)
+                            .expand(B_enc, beam_factor, L_enc, D)
+                            .reshape(Bx, L_enc, D)               # (B*K, L_enc, D)
+                            .contiguous()
+                        )
+
+                        src_mask = (
+                            pad_mask_src
+                            .unsqueeze(1)                        # (B, 1, L_enc)
+                            .expand(B_enc, beam_factor, L_enc)
+                            .reshape(Bx, L_enc)                  # (B*K, L_enc)
+                            .contiguous()
+                        )
+                    else:
+                        enc = encoder_output
+                        src_mask = pad_mask_src
+
+                    # 用扩展后的 enc / src_mask 调 decoder
+                    asr_logits = self.model.score(x, enc, src_mask)
+
                     if recognition_config.get('lm_model') is not None:
                         lm_logits = recognition_config['lm_model'].score(x)
                         return asr_logits + recognition_config['lm_weight'] * lm_logits
