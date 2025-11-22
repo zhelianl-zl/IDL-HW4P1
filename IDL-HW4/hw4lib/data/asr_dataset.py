@@ -194,8 +194,8 @@ class ASRDataset(Dataset):
                 self.text_max_len = max(self.text_max_len, len(tokenized)+1)
                 
                 # TODO: Create shifted and golden versions by adding sos and eos tokens   
-                self.transcripts_shifted.append(torch.tensor([self.sos_token] + tokenized))
-                self.transcripts_golden.append(torch.tensor(tokenized + [self.eos_token]))
+                self.transcripts_shifted.append([self.sos_token] + tokenized)
+                self.transcripts_golden.append(tokenized + [self.eos_token])
 
         # Calculate average characters per token
         # DO NOT MODIFY 
@@ -316,8 +316,10 @@ class ASRDataset(Dataset):
         if self.partition != "test-clean":
             # TODO: Collect shifted and golden transcripts from the batch into a list of tensors (B x T)  
             # Note: Use list comprehension to collect the transcripts from the batch   
-            batch_shifted      = [item[1] for item in batch]  # Extract shifted transcripts
-            batch_golden       = [item[2] for item in batch]  # Extract golden transcripts
+            # 先从 batch 里取出 list[int]，再转成 LongTensor
+            batch_shifted = [torch.tensor(item[1], dtype=torch.long) for item in batch]
+            batch_golden  = [torch.tensor(item[2], dtype=torch.long) for item in batch]
+
 
             # TODO: Collect transcript lengths from the batch into a tensor
             # Note: Use list comprehension to collect the transcript lengths from the batch   
